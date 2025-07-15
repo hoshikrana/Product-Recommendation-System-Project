@@ -43,7 +43,7 @@ def initialize_data_and_tfidf(data_path):
         tfidf_vectorizer = TfidfVectorizer(
                                         stop_words='english',
                                         strip_accents='unicode',
-                                        max_features=5000
+                                        max_features=3000
                                     )
         tfidf_matrix_content = tfidf_vectorizer.fit_transform(df['combined_text'])
         print(f" TF-IDF initialized: {tfidf_matrix_content.shape}")
