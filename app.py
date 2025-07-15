@@ -4,138 +4,125 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+import gc
 
-# File paths
-model_filename = 'best_model.pkl'
-data_path = 'dataset.csv'
-# Globals
+app = Flask(__name__)
+
+# Globals for lazy loading
 best_model = None
 df = None
 tfidf_vectorizer = None
 tfidf_matrix_content = None
 
-# === Load CF model ===
+model_filename = 'best_model.pkl'
+data_path = 'dataset.csv'
+
+# === Load CF model lazily ===
 def load_model(filename):
     global best_model
-    try:
-        _, best_model = load(filename)
-        print(" Model loaded successfully")
+    if best_model is None:
+        try:
+            _, best_model = load(filename)
+            print(" Model loaded successfully")
+        except Exception as e:
+            print(" Error loading model:", e)
 
-    except Exception as e:
-        print("Error loading model:", e)
-        best_model = None
-
-# === Load data and initialize TF-IDF ===
-def initialize_data_and_tfidf(data_path):
+# === Load data and initialize TF-IDF lazily ===
+def initialize_data_and_tfidf(path):
     global df, tfidf_vectorizer, tfidf_matrix_content
-    try:
-        df = pd.read_csv(data_path)
-        print(f" Data loaded: {df.shape}")
+    if df is None:
+        try:
+            df = pd.read_csv(path).sample(n=10000, random_state=42)  # Trimmed
+            print(f" Data loaded: {df.shape}")
 
-        if 'combined_text' not in df.columns:
-            df['combined_text'] = df['product_category_name_english'].fillna('') + \
-                                  (' ' + df['Brand'].fillna('')) * 3 + \
-                                  (' ' + df['Name'].fillna('')) * 3 + \
-                                  ' ' + df['Description'].fillna('') + \
-                                  ' ' + df['Tags'].fillna('')
+            df['combined_text'] = (
+                df['product_category_name_english'].fillna('') +
+                (' ' + df['Brand'].fillna('')) * 3 +
+                (' ' + df['Name'].fillna('')) * 3 +
+                ' ' + df['Description'].fillna('') +
+                ' ' + df['Tags'].fillna('')
+            )
 
-        tfidf_vectorizer = TfidfVectorizer(stop_words='english')
-        tfidf_matrix_content = tfidf_vectorizer.fit_transform(df['combined_text'])
-        print(f" TF-IDF initialized: {tfidf_matrix_content.shape}")
-    except Exception as e:
-        print(f" Error initializing TF-IDF: {e}")
+            tfidf_vectorizer = TfidfVectorizer(stop_words='english', max_features=5000)
+            tfidf_matrix_content = tfidf_vectorizer.fit_transform(df['combined_text'])
+            print(f" TF-IDF initialized: {tfidf_matrix_content.shape}")
+            gc.collect()
+        except Exception as e:
+            print(f" TF-IDF Init Error: {e}")
 
 # === Content-based recommendation ===
 def Content_Base_Recomendation(dataframe, search_term, top_n=10):
     try:
         search_vector = tfidf_vectorizer.transform([search_term])
         cos_sim = cosine_similarity(search_vector, tfidf_matrix_content)
-        similar_items = list(enumerate(cos_sim[0]))
-        similar_items = sorted(similar_items, key=lambda x: x[1], reverse=True)
-        Top_similar_items = [item for item in similar_items if item[1] > 0.0][:top_n]
-        recommended_indexes = [x[0] for x in Top_similar_items]
+        similar_items = sorted(enumerate(cos_sim[0]), key=lambda x: x[1], reverse=True)
+        recommended_indexes = [x[0] for x in similar_items if x[1] > 0.0][:top_n]
 
-        valid_recomended_indexes = [idx for idx in recommended_indexes if idx < len(dataframe)]
-        if not valid_recomended_indexes:
+        if not recommended_indexes:
             return pd.DataFrame()
 
-        recommended_items = dataframe.iloc[valid_recomended_indexes][['Name', 'Brand', 'ReviewCount', 'review_score']]
-        return recommended_items
+        return dataframe.iloc[recommended_indexes][['Name', 'Brand', 'ReviewCount', 'review_score']]
     except Exception as e:
-        print(f" Content-based error: {e}")
+        print(f" CB Error: {e}")
         return pd.DataFrame()
 
-# === Hybrid recommendation combining CF + CB ===
-def hybrid_recommendations(user_id, search_term=None, cf_model=None, cb_function=None, dataframe=None, top_n=10):
-    try:
-        if cf_model is not None and tfidf_matrix_content is not None and search_term is not None:
-            cb_recs = cb_function(dataframe, search_term, top_n=top_n * 2)
-            if not cb_recs.empty:
-                cb_item_ids = []
-                for _, row in cb_recs.iterrows():
-                    match = dataframe[(dataframe['Name'] == row['Name']) & (dataframe['Brand'] == row['Brand'])]
-                    if not match.empty:
-                        cb_item_ids.append(match.iloc[0]['product_id'])
-
-                cf_predictions = [cf_model.predict(user_id, iid) for iid in cb_item_ids if not pd.isna(iid)]
-                recommended_items = []
-                for pred in cf_predictions:
-                    if pred.iid in dataframe['product_id'].values:
-                        details = dataframe[dataframe['product_id'] == pred.iid].iloc[0]
-                        recommended_items.append({
-                            'Name': details['Name'],
-                            'Brand': details['Brand'],
-                            'ReviewCount': details['ReviewCount'],
-                            'Rating': pred.est
-                        })
-                return pd.DataFrame(recommended_items).sort_values(by='Rating', ascending=False).head(top_n)
-            else:
-                print(" No CB recommendations to refine.")
-                return pd.DataFrame()
-        elif search_term is not None:
-            print(" Cold-start user. Using CB only.")
-            return cb_function(dataframe, search_term, top_n)
-        else:
-            print(" Insufficient input for recommendation.")
-            return pd.DataFrame()
-    except Exception as e:
-        print(f" Hybrid recommendation error: {e}")
+# === Hybrid recommendation ===
+def hybrid_recommendations(user_id, search_term, top_n=10):
+    initialize_data_and_tfidf(data_path)
+    load_model(model_filename)
+    if df is None or best_model is None or tfidf_vectorizer is None:
         return pd.DataFrame()
 
-# === Initialize Flask ===
-app = Flask(__name__)
-load_model(model_filename)
-initialize_data_and_tfidf(data_path)
+    cb_recs = Content_Base_Recomendation(df, search_term, top_n=top_n * 2)
+    if cb_recs.empty:
+        print(" No CB recommendations")
+        return pd.DataFrame()
 
+    cb_item_ids = []
+    for _, row in cb_recs.iterrows():
+        match = df[(df['Name'] == row['Name']) & (df['Brand'] == row['Brand'])]
+        if not match.empty:
+            cb_item_ids.append(match.iloc[0]['product_id'])
+
+    cf_predictions = [
+        best_model.predict(user_id, iid) for iid in cb_item_ids if not pd.isna(iid)
+    ]
+
+    final_recs = []
+    for pred in cf_predictions:
+        if pred.iid in df['product_id'].values:
+            details = df[df['product_id'] == pred.iid].iloc[0]
+            final_recs.append({
+                'Name': details['Name'],
+                'Brand': details['Brand'],
+                'ReviewCount': details['ReviewCount'],
+                'Rating': pred.est
+            })
+    return pd.DataFrame(final_recs).sort_values(by='Rating', ascending=False).head(top_n)
+
+# === Flask routes ===
 @app.route('/')
 def home():
     return render_template("index.html")
 
 @app.route('/recommend', methods=['GET'])
 def recommend():
-    if best_model is None or df is None or tfidf_vectorizer is None or tfidf_matrix_content is None:
-        return jsonify({"error": "System not fully initialized."}), 500
-
     user_id_str = request.args.get('user_id')
-    user_id = float(user_id_str) if user_id_str else None
     search_term = request.args.get('search_term', type=str)
     top_n = request.args.get('top_n', default=10, type=int)
 
-    if user_id is None and search_term is None:
-        return jsonify({"error": "Please provide either 'user_id' or 'search_term'."}), 400
+    if not user_id_str or not search_term:
+        return jsonify({"error": "Provide both 'user_id' and 'search_term'"}), 400
 
-    recommendations = hybrid_recommendations(
-        user_id=user_id,
-        search_term=search_term,
-        cf_model=best_model,
-        cb_function=Content_Base_Recomendation,
-        dataframe=df,
-        top_n=top_n
-    )
-
-    if recommendations.empty:
-        return jsonify({"message": "No recommendations found."}), 404
-    return jsonify(recommendations.to_dict(orient='records'))
+    try:
+        user_id = float(user_id_str)
+        recommendations = hybrid_recommendations(user_id, search_term, top_n)
+        if recommendations.empty:
+            return jsonify({"message": "No recommendations found."}), 404
+        return jsonify(recommendations.to_dict(orient='records'))
+    except Exception as e:
+        print(f" API error: {e}")
+        return jsonify({"error": "Something went wrong."}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
