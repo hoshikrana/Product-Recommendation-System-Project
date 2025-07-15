@@ -64,7 +64,8 @@ def Content_Base_Recomendation(dataframe, search_term, top_n=10):
         if not valid_recomended_indexes:
             return pd.DataFrame()
 
-        recommended_items = dataframe.iloc[valid_recomended_indexes][['product_id', 'Name', 'Brand', 'ReviewCount', 'review_score']]        return recommended_items
+        recommended_items = dataframe.iloc[valid_recomended_indexes][['product_id', 'Name', 'Brand', 'ReviewCount', 'review_score']]        
+        return recommended_items
     except Exception as e:
         print(f" Content-based error: {e}")
         return pd.DataFrame()
