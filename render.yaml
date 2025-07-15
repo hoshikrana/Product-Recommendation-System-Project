@@ -1,6 +1,7 @@
+
 services:
   - type: web
-    name: product-recommender
+    name: product-recommendation-app
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
