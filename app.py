@@ -5,6 +5,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import gc
+import os
 
 app = Flask(__name__)
 
@@ -124,5 +125,8 @@ def recommend():
         print(f" API error: {e}")
         return jsonify({"error": "Something went wrong."}), 500
 
+
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 10000))  # Render uses PORT env variable
+    app.run(debug=True, host='0.0.0.0', port=port)
