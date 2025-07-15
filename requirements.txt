@@ -2,7 +2,7 @@ Flask
 surprise
 pandas
 scikit-learn
-numpy
+numpy<2
 matplotlib
 seaborn
 gdown
