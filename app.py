@@ -4,6 +4,7 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+import os
 
 # File paths
 model_filename = 'best_model.pkl'
@@ -39,7 +40,11 @@ def initialize_data_and_tfidf(data_path):
                                   ' ' + df['Description'].fillna('') + \
                                   ' ' + df['Tags'].fillna('')
 
-        tfidf_vectorizer = TfidfVectorizer(stop_words='english')
+        tfidf_vectorizer = TfidfVectorizer(
+                                        stop_words='english',
+                                        strip_accents='unicode',
+                                        max_features=5000
+                                    )
         tfidf_matrix_content = tfidf_vectorizer.fit_transform(df['combined_text'])
         print(f" TF-IDF initialized: {tfidf_matrix_content.shape}")
     except Exception as e:
@@ -59,8 +64,7 @@ def Content_Base_Recomendation(dataframe, search_term, top_n=10):
         if not valid_recomended_indexes:
             return pd.DataFrame()
 
-        recommended_items = dataframe.iloc[valid_recomended_indexes][['Name', 'Brand', 'ReviewCount', 'review_score']]
-        return recommended_items
+        recommended_items = dataframe.iloc[valid_recomended_indexes][['product_id', 'Name', 'Brand', 'ReviewCount', 'review_score']]        return recommended_items
     except Exception as e:
         print(f" Content-based error: {e}")
         return pd.DataFrame()
@@ -111,15 +115,21 @@ initialize_data_and_tfidf(data_path)
 def home():
     return render_template("index.html")
 
-@app.route('/recommend', methods=['GET'])
+@app.route('/recommend', methods=['GET', 'POST'])
 def recommend():
     if best_model is None or df is None or tfidf_vectorizer is None or tfidf_matrix_content is None:
         return jsonify({"error": "System not fully initialized."}), 500
 
-    user_id_str = request.args.get('user_id')
-    user_id = float(user_id_str) if user_id_str else None
-    search_term = request.args.get('search_term', type=str)
-    top_n = request.args.get('top_n', default=10, type=int)
+    if request.method == 'POST':
+        payload = request.get_json()
+        user_id = float(payload.get('user_id')) if 'user_id' in payload else None
+        search_term = payload.get('search_term', None)
+        top_n = int(payload.get('top_n', 10))
+    else:
+        user_id_str = request.args.get('user_id')
+        user_id = float(user_id_str) if user_id_str else None
+        search_term = request.args.get('search_term', type=str)
+        top_n = request.args.get('top_n', default=10, type=int)
 
     if user_id is None and search_term is None:
         return jsonify({"error": "Please provide either 'user_id' or 'search_term'."}), 400
