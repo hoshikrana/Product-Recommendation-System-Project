@@ -7,7 +7,7 @@ import numpy as np
 
 # File paths
 model_filename = 'best_model.pkl'
-data_path = 'datasets/project_data_filled.csv'
+data_path = 'dataset.csv'
 # Globals
 best_model = None
 df = None
