@@ -5,4 +5,4 @@ numpy<2
 matplotlib
 seaborn
 surprise
-gdown
+requests
