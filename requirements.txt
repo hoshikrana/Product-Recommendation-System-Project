@@ -1,9 +1,8 @@
-Flask
-surprise
+streamlit
 pandas
 scikit-learn
 numpy<2
 matplotlib
 seaborn
+surprise
 gdown
-gunicorn
