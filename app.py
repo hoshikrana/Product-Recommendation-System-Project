@@ -43,7 +43,6 @@ def initialize_data_and_tfidf(data_path):
         tfidf_vectorizer = TfidfVectorizer(
                                         stop_words='english',
                                         strip_accents='unicode',
-                                        max_features=3000
                                     )
         tfidf_matrix_content = tfidf_vectorizer.fit_transform(df['combined_text'])
         print(f" TF-IDF initialized: {tfidf_matrix_content.shape}")
@@ -149,5 +148,4 @@ def recommend():
     return jsonify(recommendations.to_dict(orient='records'))
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
